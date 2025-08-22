@@ -30,6 +30,7 @@
     "dev": "vite",
     "build-lib": "rm -rf dist && vite build && rollup --config rollup.config.ts --configPlugin typescript",
     "build-samples": "rm -rf docs/dist &&cross-env SAMPLES=1 vite build",
+    "build-html": "rm -rf dist &&cross-env SAMPLES=1 vite build --config vite2.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --ext .ts ."
   },

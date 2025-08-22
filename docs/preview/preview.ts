@@ -1,15 +1,15 @@
 /// <reference types="@webgpu/types" />
 
-import { vec3, mat4, quat } from 'gl-matrix';
-import { decodeDds, parseHeaders } from 'dds-parser';
+import { vec3, mat4, quat } from "gl-matrix";
+import { decodeDds, parseHeaders } from "dds-parser";
 
-import { parse as parseMDL } from '../../mdl/parse';
-import { parse as parseMDX } from '../../mdx/parse';
-import { Model } from '../../model';
-import { DDS_FORMAT, ModelRenderer } from '../../renderer/modelRenderer';
-import { vec3RotateZ } from '../../renderer/util';
-import { decode, getImageData } from '../../blp/decode';
-import '../common/shim';
+import { parse as parseMDL } from "../../mdl/parse";
+import { parse as parseMDX } from "../../mdx/parse";
+import { Model } from "../../model";
+import { DDS_FORMAT, ModelRenderer } from "../../renderer/modelRenderer";
+import { vec3RotateZ } from "../../renderer/util";
+import { decode, getImageData } from "../../blp/decode";
+import "../common/shim";
 
 let model: Model;
 let modelRenderer: ModelRenderer;
@@ -62,272 +62,331 @@ const lightColor: vec3 = vec3.fromValues(1, 1, 1);
 
 const messageChannel = new MessageChannel();
 function nextTick(cb: (now: number) => void): void {
-    messageChannel.port1.onmessage = () => {
-        cb(performance.now());
-    };
+  messageChannel.port1.onmessage = () => {
+    cb(performance.now());
+  };
 
-    messageChannel.port2.postMessage('');
+  messageChannel.port2.postMessage("");
 }
 
 let frames = 0;
 let framesTs = 0;
 function nextFrame(cb: (now: number) => void): void {
-    if (UNCAPPED_FPS) {
-        nextTick(cb);
-    } else {
-        requestAnimationFrame(cb);
-    }
+  if (UNCAPPED_FPS) {
+    nextTick(cb);
+  } else {
+    requestAnimationFrame(cb);
+  }
 
-    if (LOG_FPS) {
-        const now = performance.now();
-        if (now - framesTs > 1000) {
-            framesTs = now;
-            if (frames) {
-                console.log(frames);
-                frames = 0;
-            }
-        }
-        ++frames;
+  if (LOG_FPS) {
+    const now = performance.now();
+    if (now - framesTs > 1000) {
+      framesTs = now;
+      if (frames) {
+        console.log(frames);
+        frames = 0;
+      }
     }
+    ++frames;
+  }
 }
 
 let start;
 function updateModel(timestamp: number) {
-    if (!start) {
-        start = timestamp;
-    }
-    const delta = timestamp - start;
-    // delta /= 10;
+  if (!start) {
     start = timestamp;
+  }
+  const delta = timestamp - start;
+  // delta /= 10;
+  start = timestamp;
 
-    if (isAnimationPlaying) {
-        modelRenderer.update(delta);
-    }
-    updateAnimationFrame();
+  if (isAnimationPlaying) {
+    modelRenderer.update(delta);
+  }
+  updateAnimationFrame();
 }
 
 async function initGL() {
-    if (gl || gpuDevice) {
-        return;
+  if (gl || gpuDevice) {
+    return;
+  }
+
+  try {
+    // try {
+
+    //   const adapter = await navigator.gpu?.requestAdapter();
+    //   hasGPUBC = Array.from(adapter?.features || []).includes(
+    //     "texture-compression-bc"
+    //   );
+    //   gpuDevice = await adapter?.requestDevice({
+    //     requiredFeatures: [hasGPUBC && "texture-compression-bc"].filter(
+    //       Boolean
+    //     ) as GPUFeatureName[],
+    //   });
+    //   gpuDevice.addEventListener("webglcontextcreationerror", (e) => {
+    //     console.error("asd", e);
+    //   });
+    //   gpuDevice.addEventListener("webglcontextlost", (e) => {
+    //     console.error("asd", e);
+    //   });
+    //   gpuContext = canvas.getContext("webgpu");
+    //   if (gpuContext) {
+    //     gpuContext.configure({
+    //       device: gpuDevice,
+    //       format: navigator.gpu.getPreferredCanvasFormat(),
+    //       alphaMode: "premultiplied",
+    //     });
+    //     gpuDepthTexture = gpuDevice.createTexture({
+    //       label: "shadow depth texture",
+    //       size: [FB_WIDTH, FB_HEIGHT],
+    //       format: "depth32float",
+    //       usage:
+    //         GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    //     });
+    //     return;
+    //   }
+    // } catch (err) {
+    gpuDevice = null;
+    gpuContext?.unconfigure();
+    gpuContext = null;
+    hasGPUBC = false;
+    gpuDepthTexture?.destroy();
+    gpuDepthTexture = undefined;
+    const newCanvas = canvas.cloneNode() as HTMLCanvasElement;
+    canvas.parentElement.append(newCanvas);
+    canvas.remove();
+    canvas = newCanvas;
+    // }
+
+    const opts: WebGLContextAttributes = {
+      antialias: false,
+      alpha: false,
+    };
+
+    if (!gpuContext) {
+      gl =
+        canvas.getContext("webgl2", opts) ||
+        canvas.getContext("webgl", opts) ||
+        (canvas.getContext("experimental-webgl", opts) as
+          | WebGL2RenderingContext
+          | WebGLRenderingContext);
     }
 
-    try {
-        try {
-            const adapter = await navigator.gpu?.requestAdapter();
-            hasGPUBC = Array.from(adapter?.features || []).includes('texture-compression-bc');
-            gpuDevice = await adapter?.requestDevice({
-                requiredFeatures: [
-                    hasGPUBC && 'texture-compression-bc'
-                ].filter(Boolean) as GPUFeatureName[]
-            });
-            gpuContext = canvas.getContext('webgpu');
-            if (gpuContext) {
-                gpuContext.configure({
-                    device: gpuDevice,
-                    format: navigator.gpu.getPreferredCanvasFormat(),
-                    alphaMode: 'premultiplied'
-                });
-                gpuDepthTexture = gpuDevice.createTexture({
-                    label: 'shadow depth texture',
-                    size: [FB_WIDTH, FB_HEIGHT],
-                    format: 'depth32float',
-                    usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING
-                });
-                return;
-            }
-        } catch (err) {
-            gpuDevice = null;
-            gpuContext?.unconfigure();
-            gpuContext = null;
-            hasGPUBC = false;
-            gpuDepthTexture?.destroy();
-            gpuDepthTexture = undefined;
-            const newCanvas = canvas.cloneNode() as HTMLCanvasElement;
-            canvas.parentElement.append(newCanvas);
-            canvas.remove();
-            canvas = newCanvas;
-        }
-
-        const opts: WebGLContextAttributes = {
-            antialias: false,
-            alpha: false
-        };
-
-        if (!gpuContext) {
-            gl = canvas.getContext('webgl2', opts) ||
-                canvas.getContext('webgl', opts) ||
-                canvas.getContext('experimental-webgl', opts) as
-                (WebGL2RenderingContext | WebGLRenderingContext);
-        }
-
-        let supportShadows = false;
-        if (gl instanceof WebGLRenderingContext) {
-            const depthExt = gl.getExtension('WEBGL_depth_texture');
-            if (depthExt) {
-                supportShadows = true;
-            }
-        } else {
-            supportShadows = true;
-        }
-
-        ddsExt = (
-            gl.getExtension('WEBGL_compressed_texture_s3tc') ||
-            gl.getExtension('MOZ_WEBGL_compressed_texture_s3tc') ||
-            gl.getExtension('WEBKIT_WEBGL_compressed_texture_s3tc')
-        );
-
-        rgtcExt = (
-            gl.getExtension('EXT_texture_compression_rgtc')
-        );
-
-        if (supportShadows) {
-            framebuffer = gl.createFramebuffer();
-
-            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-
-            framebufferTexture = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, framebufferTexture);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, FB_WIDTH, FB_HEIGHT, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, framebufferTexture, 0);
-
-            framebufferDepthTexture = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, framebufferDepthTexture);
-            if (gl instanceof WebGLRenderingContext) {
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT, FB_WIDTH, FB_HEIGHT, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
-            } else {
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT32F, FB_WIDTH, FB_HEIGHT, 0, gl.DEPTH_COMPONENT, gl.FLOAT, null);
-            }
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, framebufferDepthTexture, 0);
-
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        }
-
-        gl.clearColor(0.15, 0.15, 0.15, 1.0);
-        gl.enable(gl.DEPTH_TEST);
-        gl.depthFunc(gl.LEQUAL);
-    } catch (err) {
-        alert(err);
+    let supportShadows = false;
+    if (gl instanceof WebGLRenderingContext) {
+      const depthExt = gl.getExtension("WEBGL_depth_texture");
+      if (depthExt) {
+        supportShadows = true;
+      }
+    } else {
+      supportShadows = true;
     }
+
+    ddsExt =
+      gl.getExtension("WEBGL_compressed_texture_s3tc") ||
+      gl.getExtension("MOZ_WEBGL_compressed_texture_s3tc") ||
+      gl.getExtension("WEBKIT_WEBGL_compressed_texture_s3tc");
+
+    rgtcExt = gl.getExtension("EXT_texture_compression_rgtc");
+
+    if (supportShadows) {
+      framebuffer = gl.createFramebuffer();
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+
+      framebufferTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, framebufferTexture);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGB,
+        FB_WIDTH,
+        FB_HEIGHT,
+        0,
+        gl.RGB,
+        gl.UNSIGNED_BYTE,
+        null
+      );
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.framebufferTexture2D(
+        gl.FRAMEBUFFER,
+        gl.COLOR_ATTACHMENT0,
+        gl.TEXTURE_2D,
+        framebufferTexture,
+        0
+      );
+
+      framebufferDepthTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, framebufferDepthTexture);
+      if (gl instanceof WebGLRenderingContext) {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.DEPTH_COMPONENT,
+          FB_WIDTH,
+          FB_HEIGHT,
+          0,
+          gl.DEPTH_COMPONENT,
+          gl.UNSIGNED_INT,
+          null
+        );
+      } else {
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.DEPTH_COMPONENT32F,
+          FB_WIDTH,
+          FB_HEIGHT,
+          0,
+          gl.DEPTH_COMPONENT,
+          gl.FLOAT,
+          null
+        );
+      }
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.framebufferTexture2D(
+        gl.FRAMEBUFFER,
+        gl.DEPTH_ATTACHMENT,
+        gl.TEXTURE_2D,
+        framebufferDepthTexture,
+        0
+      );
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+
+    gl.clearColor(0.15, 0.15, 0.15, 1.0);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+  } catch (err) {
+    alert(err);
+  }
 }
 
 const cameraPosProjected: vec3 = vec3.create();
 const verticalQuat: quat = quat.create();
 const fromCameraBaseVec: vec3 = vec3.fromValues(1, 0, 0);
 function calcCameraQuat(cameraPos: vec3, cameraTarget: vec3): quat {
-    vec3.set(cameraPosProjected, cameraPos[0], cameraPos[1], 0);
-    vec3.subtract(cameraPosTemp, cameraPos, cameraTarget);
-    vec3.normalize(cameraPosProjected, cameraPosProjected);
-    vec3.normalize(cameraPosTemp, cameraPosTemp);
+  vec3.set(cameraPosProjected, cameraPos[0], cameraPos[1], 0);
+  vec3.subtract(cameraPosTemp, cameraPos, cameraTarget);
+  vec3.normalize(cameraPosProjected, cameraPosProjected);
+  vec3.normalize(cameraPosTemp, cameraPosTemp);
 
-    const cameraQuat = quat.create();
-    quat.rotationTo(cameraQuat, fromCameraBaseVec, cameraPosProjected);
-    quat.rotationTo(verticalQuat, cameraPosProjected, cameraPosTemp);
-    quat.mul(cameraQuat, verticalQuat, cameraQuat);
+  const cameraQuat = quat.create();
+  quat.rotationTo(cameraQuat, fromCameraBaseVec, cameraPosProjected);
+  quat.rotationTo(verticalQuat, cameraPosProjected, cameraPosTemp);
+  quat.mul(cameraQuat, verticalQuat, cameraQuat);
 
-    return cameraQuat;
+  return cameraQuat;
 }
 
 function drawScene() {
-    if (gl) {
-        gl.depthMask(true);
+  if (gl) {
+    gl.depthMask(true);
+  }
+  mat4.perspective(
+    pMatrix,
+    Math.PI / 4,
+    canvas.width / canvas.height,
+    0.1,
+    3000.0
+  );
+  mat4.perspective(lightPMatrix, Math.PI / 4, 1, 0.1, 3000.0);
+
+  vec3.set(
+    cameraBasePos,
+    Math.cos(cameraTheta) * Math.cos(cameraPhi) * cameraDistance,
+    Math.cos(cameraTheta) * Math.sin(cameraPhi) * cameraDistance,
+    cameraTargetZ + Math.sin(cameraTheta) * cameraDistance
+  );
+  cameraTarget[2] = cameraTargetZ;
+
+  vec3RotateZ(cameraPos, cameraBasePos, window["angle"] || 0);
+  mat4.lookAt(mvMatrix, cameraPos, cameraTarget, cameraUp);
+  mat4.lookAt(lightMVMatrix, lightPosition, lightTarget, cameraUp);
+
+  mat4.identity(shadowMapMatrix);
+  mat4.multiply(shadowMapMatrix, shadowMapMatrix, lightPMatrix);
+  mat4.multiply(shadowMapMatrix, shadowMapMatrix, lightMVMatrix);
+
+  const cameraQuat: quat = calcCameraQuat(cameraPos, cameraTarget);
+  const lightQuat: quat = calcCameraQuat(lightPosition, lightTarget);
+
+  modelRenderer.setLightPosition(lightPosition);
+  modelRenderer.setLightColor(lightColor);
+
+  if (shadow && model.Geosets?.some((it) => it.SkinWeights?.length > 0)) {
+    if (gpuDevice) {
+      modelRenderer.setCamera(lightPosition, lightQuat);
+      modelRenderer.render(lightMVMatrix, lightPMatrix, {
+        wireframe: false,
+        depthTextureTarget: gpuDepthTexture,
+      });
+    } else if (framebuffer) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.viewport(0, 0, FB_WIDTH, FB_HEIGHT);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      modelRenderer.setCamera(lightPosition, lightQuat);
+      modelRenderer.render(lightMVMatrix, lightPMatrix, {
+        wireframe: false,
+      });
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    mat4.perspective(pMatrix, Math.PI / 4, canvas.width / canvas.height, 0.1, 3000.0);
-    mat4.perspective(lightPMatrix, Math.PI / 4, 1, 0.1, 3000.0);
+  }
 
-    vec3.set(
-        cameraBasePos,
-        Math.cos(cameraTheta) * Math.cos(cameraPhi) * cameraDistance,
-        Math.cos(cameraTheta) * Math.sin(cameraPhi) * cameraDistance,
-        cameraTargetZ + Math.sin(cameraTheta) * cameraDistance
-    );
-    cameraTarget[2] = cameraTargetZ;
+  if (gl) {
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  }
 
-    vec3RotateZ(cameraPos, cameraBasePos, window['angle'] || 0);
-    mat4.lookAt(mvMatrix, cameraPos, cameraTarget, cameraUp);
-    mat4.lookAt(lightMVMatrix, lightPosition, lightTarget, cameraUp);
+  modelRenderer.setCamera(cameraPos, cameraQuat);
+  modelRenderer.render(mvMatrix, pMatrix, {
+    levelOfDetail: lod,
+    wireframe,
+    env: ibl,
+    useEnvironmentMap: ibl,
+    shadowMapTexture: shadow
+      ? gpuDepthTexture || framebufferDepthTexture
+      : undefined,
+    shadowMapMatrix: shadow ? shadowMapMatrix : undefined,
+    shadowBias: 1e-6,
+    shadowSmoothingStep: 1 / SHADOW_QUALITY,
+  });
 
-    mat4.identity(shadowMapMatrix);
-    mat4.multiply(shadowMapMatrix, shadowMapMatrix, lightPMatrix);
-    mat4.multiply(shadowMapMatrix, shadowMapMatrix, lightMVMatrix);
-
-    const cameraQuat: quat = calcCameraQuat(cameraPos, cameraTarget);
-    const lightQuat: quat = calcCameraQuat(lightPosition, lightTarget);
-
-    modelRenderer.setLightPosition(lightPosition);
-    modelRenderer.setLightColor(lightColor);
-
-    if (shadow && model.Geosets?.some(it => it.SkinWeights?.length > 0)) {
-        if (gpuDevice) {
-            modelRenderer.setCamera(lightPosition, lightQuat);
-            modelRenderer.render(lightMVMatrix, lightPMatrix, {
-                wireframe: false,
-                depthTextureTarget: gpuDepthTexture
-            });
-        } else if (framebuffer) {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-            gl.viewport(0, 0, FB_WIDTH, FB_HEIGHT);
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-            modelRenderer.setCamera(lightPosition, lightQuat);
-            modelRenderer.render(lightMVMatrix, lightPMatrix, {
-                wireframe: false
-            });
-
-            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        }
-    }
-
-    if (gl) {
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    }
-
-    modelRenderer.setCamera(cameraPos, cameraQuat);
-    modelRenderer.render(mvMatrix, pMatrix, {
-        levelOfDetail: lod,
-        wireframe,
-        env: ibl,
-        useEnvironmentMap: ibl,
-        shadowMapTexture: shadow ? gpuDepthTexture || framebufferDepthTexture : undefined,
-        shadowMapMatrix: shadow ? shadowMapMatrix : undefined,
-        shadowBias: 1e-6,
-        shadowSmoothingStep: 1 / SHADOW_QUALITY
-    });
-
-    if (showSkeleton) {
-        modelRenderer.renderSkeleton(mvMatrix, pMatrix, skeletonNodes);
-    }
+  if (showSkeleton) {
+    modelRenderer.renderSkeleton(mvMatrix, pMatrix, skeletonNodes);
+  }
 }
 
 function tick(timestamp: number) {
-    nextFrame(tick);
-    updateModel(timestamp);
-    drawScene();
+  nextFrame(tick);
+  updateModel(timestamp);
+  drawScene();
 }
 
 function loadTexture(src: string, textureName: string) {
-    const img = new Image();
+  const img = new Image();
 
-    img.onload = () => {
-        modelRenderer.setTextureImage(textureName, img);
+  img.onload = () => {
+    modelRenderer.setTextureImage(textureName, img);
 
-        handleLoadedTexture();
-    };
-    img.src = src;
+    handleLoadedTexture();
+  };
+  img.src = src;
 }
 
 let started = false;
 function handleLoadedTexture(): void {
-    if (!started) {
-        started = true;
-        requestAnimationFrame(tick);
-    }
+  if (!started) {
+    started = true;
+    requestAnimationFrame(tick);
+  }
 }
 
 /* function parseModel(isBinary: boolean, xhr: XMLHttpRequest): Model {
@@ -339,20 +398,21 @@ function handleLoadedTexture(): void {
 } */
 
 async function processModelLoading() {
-    console.log(model);
+  console.log(model);
 
-    modelRenderer = new ModelRenderer(model);
-    modelRenderer.setTeamColor(parseColor(inputColor.value));
+  modelRenderer = new ModelRenderer(model);
+  modelRenderer.setTeamColor(parseColor(inputColor.value));
 
-    await initGL();
-    if (gpuDevice) {
-        modelRenderer.initGPUDevice(canvas, gpuDevice, gpuContext);
-    } else {
-        modelRenderer.initGL(gl);
-    }
+  await initGL();
+  if (gpuDevice) {
+    modelRenderer.initGPUDevice(canvas, gpuDevice, gpuContext);
+  } else {
+    modelRenderer.initGL(gl);
+  }
+  (window as any).modelRenderer = modelRenderer;
 
-    setAnimationList();
-    updateAnimationFrame();
+  setAnimationList();
+  updateAnimationFrame();
 }
 
 /* function setSampleTextures () {
@@ -385,539 +445,677 @@ async function processModelLoading() {
 } */
 
 function init() {
-    canvas = document.getElementById('canvas') as HTMLCanvasElement;
-    initControls();
-    initCameraMove();
-    initDragDrop();
-    // loadModel();
-    updateCanvasSize();
-    window.addEventListener('resize', updateCanvasSize);
+  canvas = document.getElementById("canvas") as HTMLCanvasElement;
+  initControls();
+  initCameraMove();
+  initDragDrop();
+  // loadModel();
+  updateCanvasSize();
+  window.addEventListener("resize", updateCanvasSize);
 }
 
 function parseColor(value: string): vec3 {
-    const val = value.slice(1);
+  const val = value.slice(1);
 
-    return vec3.fromValues(
-        parseInt(val.slice(0, 2), 16) / 255,
-        parseInt(val.slice(2, 4), 16) / 255,
-        parseInt(val.slice(4, 6), 16) / 255
-    );
+  return vec3.fromValues(
+    parseInt(val.slice(0, 2), 16) / 255,
+    parseInt(val.slice(2, 4), 16) / 255,
+    parseInt(val.slice(4, 6), 16) / 255
+  );
 }
 
-const inputColor = document.getElementById('color') as HTMLInputElement;
+const inputColor = document.getElementById("color") as HTMLInputElement;
 
 function initControls() {
-    inputColor.addEventListener('input', () => {
-        if (modelRenderer) {
-            modelRenderer.setTeamColor(parseColor(inputColor.value));
-        }
-    });
+  inputColor.addEventListener("input", () => {
+    if (modelRenderer) {
+      modelRenderer.setTeamColor(parseColor(inputColor.value));
+    }
+  });
 
-    const select = document.getElementById('select') as HTMLSelectElement;
-    select.addEventListener('input', () => {
-        if (modelRenderer) {
-            modelRenderer.setSequence(parseInt(select.value, 10));
-        }
-    });
+  const select = document.getElementById("select") as HTMLSelectElement;
+  select.addEventListener("input", () => {
+    if (modelRenderer) {
+      modelRenderer.setSequence(parseInt(select.value, 10));
+    }
+  });
 
-    const inputDistance = document.getElementById('distance') as HTMLInputElement;
+  const inputDistance = document.getElementById("distance") as HTMLInputElement;
+  cameraDistance = parseInt(inputDistance.value, 10);
+  inputDistance.addEventListener("input", () => {
     cameraDistance = parseInt(inputDistance.value, 10);
-    inputDistance.addEventListener('input', () => {
-        cameraDistance = parseInt(inputDistance.value, 10);
-    });
+  });
 
-    const wireframeCheck = document.getElementById('wireframe') as HTMLInputElement;
+  const wireframeCheck = document.getElementById(
+    "wireframe"
+  ) as HTMLInputElement;
+  wireframe = wireframeCheck.checked;
+  wireframeCheck.addEventListener("input", () => {
     wireframe = wireframeCheck.checked;
-    wireframeCheck.addEventListener('input', () => {
-        wireframe = wireframeCheck.checked;
-    });
+  });
 
-    const shadowCheck = document.getElementById('shadow') as HTMLInputElement;
+  const shadowCheck = document.getElementById("shadow") as HTMLInputElement;
+  shadow = shadowCheck.checked;
+  shadowCheck.addEventListener("input", () => {
     shadow = shadowCheck.checked;
-    shadowCheck.addEventListener('input', () => {
-        shadow = shadowCheck.checked;
-    });
+  });
 
-    const iblCheck = document.getElementById('ibl') as HTMLInputElement;
+  const iblCheck = document.getElementById("ibl") as HTMLInputElement;
+  ibl = iblCheck.checked;
+  iblCheck.addEventListener("input", () => {
     ibl = iblCheck.checked;
-    iblCheck.addEventListener('input', () => {
-        ibl = iblCheck.checked;
-    });
+  });
 
-    const readSkeletonNodes = (value: string) => {
-        const val = value.trim();
+  const readSkeletonNodes = (value: string) => {
+    const val = value.trim();
 
-        if (val === '*') {
-            return null;
-        } else {
-            return [val];
-        }
-    };
+    if (val === "*") {
+      return null;
+    } else {
+      return [val];
+    }
+  };
 
-    const skeleton = document.getElementById('skeleton') as HTMLInputElement;
+  const skeleton = document.getElementById("skeleton") as HTMLInputElement;
+  skeletonNodes = readSkeletonNodes(skeleton.value);
+  skeleton.addEventListener("input", () => {
     skeletonNodes = readSkeletonNodes(skeleton.value);
-    skeleton.addEventListener('input', () => {
-        skeletonNodes = readSkeletonNodes(skeleton.value);
-    });
+  });
 
-    const setShowSkeleton = (val: boolean): void => {
-        showSkeleton = val;
-        skeleton.disabled = !val;
-    };
+  const setShowSkeleton = (val: boolean): void => {
+    showSkeleton = val;
+    skeleton.disabled = !val;
+  };
 
-    const skeletonCheck = document.getElementById('show_skeleton') as HTMLInputElement;
+  const skeletonCheck = document.getElementById(
+    "show_skeleton"
+  ) as HTMLInputElement;
+  setShowSkeleton(skeletonCheck.checked);
+  skeletonCheck.addEventListener("input", () => {
     setShowSkeleton(skeletonCheck.checked);
-    skeletonCheck.addEventListener('input', () => {
-        setShowSkeleton(skeletonCheck.checked);
-    });
+  });
 
-    const lodSelect = document.getElementById('lod') as HTMLInputElement;
+  const lodSelect = document.getElementById("lod") as HTMLInputElement;
+  lod = Number(lodSelect.value);
+  lodSelect.addEventListener("change", () => {
     lod = Number(lodSelect.value);
-    lodSelect.addEventListener('change', () => {
-        lod = Number(lodSelect.value);
-    });
+  });
 
-    const toggleAnimation = document.querySelector<HTMLInputElement>('#toggle_animation') as HTMLInputElement;
-    toggleAnimation.addEventListener('click', () => {
-        isAnimationPlaying = !isAnimationPlaying;
-        toggleAnimation.textContent = isAnimationPlaying ? '⏸' : '⏵';
-    });
+  const toggleAnimation = document.querySelector<HTMLInputElement>(
+    "#toggle_animation"
+  ) as HTMLInputElement;
+  toggleAnimation.addEventListener("click", () => {
+    isAnimationPlaying = !isAnimationPlaying;
+    toggleAnimation.textContent = isAnimationPlaying ? "⏸" : "⏵";
+  });
 
-    const frameRange = document.querySelector<HTMLInputElement>('#frame_range') as HTMLInputElement;
-    const frameInput = document.querySelector<HTMLInputElement>('#frame_input') as HTMLInputElement;
-    frameRange.addEventListener('input', () => {
-        if (modelRenderer) {
-            modelRenderer.setFrame(Number(frameRange.value));
-            modelRenderer.update(0);
-        }
-    });
-    frameInput.addEventListener('input', () => {
-        if (modelRenderer) {
-            modelRenderer.setFrame(Number(frameInput.value));
-            modelRenderer.update(0);
-        }
-    });
+  const frameRange = document.querySelector<HTMLInputElement>(
+    "#frame_range"
+  ) as HTMLInputElement;
+  const frameInput = document.querySelector<HTMLInputElement>(
+    "#frame_input"
+  ) as HTMLInputElement;
+  frameRange.addEventListener("input", () => {
+    if (modelRenderer) {
+      modelRenderer.setFrame(Number(frameRange.value));
+      modelRenderer.update(0);
+    }
+  });
+  frameInput.addEventListener("input", () => {
+    if (modelRenderer) {
+      modelRenderer.setFrame(Number(frameInput.value));
+      modelRenderer.update(0);
+    }
+  });
 }
 
 function initCameraMove() {
-    let down = false;
-    let isMiddle = false;
-    let downX, downY;
+  let down = false;
+  let isMiddle = false;
+  let downX, downY;
 
-    function coords(event) {
-        const list = (event.changedTouches && event.changedTouches.length ?
-            event.changedTouches :
-            event.touches) || [event];
+  function coords(event) {
+    const list = (event.changedTouches && event.changedTouches.length
+      ? event.changedTouches
+      : event.touches) || [event];
 
-        return [list[0].pageX, list[0].pageY];
+    return [list[0].pageX, list[0].pageY];
+  }
+
+  function updateCameraDistance(distance: number): void {
+    cameraDistance = distance;
+    if (cameraDistance > 1000) {
+      cameraDistance = 1000;
+    }
+    if (cameraDistance < 100) {
+      cameraDistance = 100;
+    }
+    (document.getElementById("distance") as HTMLInputElement).value =
+      String(cameraDistance);
+  }
+
+  function pointerDown(event: PointerEvent) {
+    if (event.target !== canvas || event.button > 1) {
+      return;
     }
 
-    function updateCameraDistance(distance: number): void {
-        cameraDistance = distance;
-        if (cameraDistance > 1000) {
-            cameraDistance = 1000;
-        }
-        if (cameraDistance < 100) {
-            cameraDistance = 100;
-        }
-        (document.getElementById('distance') as HTMLInputElement).value = String(cameraDistance);
+    isMiddle = event.button === 1;
+    down = true;
+
+    [downX, downY] = coords(event);
+  }
+
+  function pointerMove(event) {
+    if (!down) {
+      return;
     }
 
-    function pointerDown(event: PointerEvent) {
-        if (event.target !== canvas || event.button > 1) {
-            return;
-        }
-
-        isMiddle = event.button === 1;
-        down = true;
-
-        [downX, downY] = coords(event);
+    if (event.type === "touchmove") {
+      event.preventDefault();
     }
 
-    function pointerMove(event) {
-        if (!down) {
-            return;
-        }
-
-        if (event.type === 'touchmove') {
-            event.preventDefault();
-        }
-
-        if (event.changedTouches && event.changedTouches.length > 1 ||
-            event.touches && event.touches.length > 1) {
-            return;
-        }
-
-        const [x, y] = coords(event);
-
-        if (isMiddle) {
-            cameraTargetZ += (y - downY) * .2;
-
-            const min = model?.Info.MinimumExtent[2] || 0;
-            const max = model?.Info.MaximumExtent[2] || 100;
-
-            cameraTargetZ = Math.max(min, Math.min(max, cameraTargetZ));
-        } else {
-            cameraPhi += -1 * (x - downX) * 0.01;
-            cameraTheta += (y - downY) * 0.01;
-
-            if (cameraTheta > Math.PI / 2 * 0.98) {
-                cameraTheta = Math.PI / 2 * 0.98;
-            }
-            if (cameraTheta < -Math.PI / 2 * 0.98) {
-                cameraTheta = -Math.PI / 2 * 0.98;
-            }
-        }
-
-        downX = x;
-        downY = y;
+    if (
+      (event.changedTouches && event.changedTouches.length > 1) ||
+      (event.touches && event.touches.length > 1)
+    ) {
+      return;
     }
 
-    function pointerUp() {
-        down = false;
+    const [x, y] = coords(event);
+
+    if (isMiddle) {
+      cameraTargetZ += (y - downY) * 0.2;
+
+      const min = model?.Info.MinimumExtent[2] || 0;
+      const max = model?.Info.MaximumExtent[2] || 100;
+
+      cameraTargetZ = Math.max(min, Math.min(max, cameraTargetZ));
+    } else {
+      cameraPhi += -1 * (x - downX) * 0.01;
+      cameraTheta += (y - downY) * 0.01;
+
+      if (cameraTheta > (Math.PI / 2) * 0.98) {
+        cameraTheta = (Math.PI / 2) * 0.98;
+      }
+      if (cameraTheta < (-Math.PI / 2) * 0.98) {
+        cameraTheta = (-Math.PI / 2) * 0.98;
+      }
     }
 
-    const controls = document.querySelector<HTMLDivElement>('.controls');
-    function wheel(event) {
-        if (controls.contains(event.target)) {
-            return;
-        }
+    downX = x;
+    downY = y;
+  }
 
-        updateCameraDistance(cameraDistance * (1 - event.wheelDelta / 600));
+  function pointerUp() {
+    down = false;
+  }
+
+  const controls = document.querySelector<HTMLDivElement>(".controls");
+  function wheel(event) {
+    if (controls.contains(event.target)) {
+      return;
     }
 
-    let startCameraDistance: number;
-    function gestureStart() {
-        startCameraDistance = cameraDistance;
-    }
+    updateCameraDistance(cameraDistance * (1 - event.wheelDelta / 600));
+  }
 
-    function gestureChange(event) {
-        updateCameraDistance(startCameraDistance * (1 / event.scale));
-    }
+  let startCameraDistance: number;
+  function gestureStart() {
+    startCameraDistance = cameraDistance;
+  }
 
-    document.addEventListener('mousedown', pointerDown);
-    document.addEventListener('touchstart', pointerDown);
-    document.addEventListener('mousemove', pointerMove);
-    document.addEventListener('touchmove', pointerMove);
-    document.addEventListener('mouseup', pointerUp);
-    document.addEventListener('touchend', pointerUp);
-    document.addEventListener('touchcancel', pointerUp);
-    document.addEventListener('wheel', wheel);
-    document.addEventListener('gesturestart', gestureStart);
-    document.addEventListener('gesturechange', gestureChange);
+  function gestureChange(event) {
+    updateCameraDistance(startCameraDistance * (1 / event.scale));
+  }
+
+  document.addEventListener("mousedown", pointerDown);
+  document.addEventListener("touchstart", pointerDown);
+  document.addEventListener("mousemove", pointerMove);
+  document.addEventListener("touchmove", pointerMove);
+  document.addEventListener("mouseup", pointerUp);
+  document.addEventListener("touchend", pointerUp);
+  document.addEventListener("touchcancel", pointerUp);
+  document.addEventListener("wheel", wheel);
+  document.addEventListener("gesturestart", gestureStart);
+  document.addEventListener("gesturechange", gestureChange);
 }
 
 function updateCanvasSize() {
-    const width = canvas.parentElement.offsetWidth;
-    const height = canvas.parentElement.offsetHeight;
-    const dpr = window.devicePixelRatio || 1;
+  const width = canvas.parentElement.offsetWidth;
+  const height = canvas.parentElement.offsetHeight;
+  const dpr = window.devicePixelRatio || 1;
 
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
 }
 
 function updateAnimationFrame() {
-    if (!modelRenderer) {
-        return;
-    }
+  if (!modelRenderer) {
+    return;
+  }
 
-    const index = modelRenderer.getSequence();
-    const animation = model.Sequences[index];
-    const frame = Math.round(modelRenderer.getFrame());
+  const index = modelRenderer.getSequence();
+  const animation = model.Sequences[index];
+  const frame = Math.round(modelRenderer.getFrame());
 
-    const range = document.querySelector<HTMLInputElement>('#frame_range');
-    const input = document.querySelector<HTMLInputElement>('#frame_input');
-    const select = document.getElementById('select') as HTMLSelectElement;
+  const range = document.querySelector<HTMLInputElement>("#frame_range");
+  const input = document.querySelector<HTMLInputElement>("#frame_input");
+  const select = document.getElementById("select") as HTMLSelectElement;
 
-    range.setAttribute('min', String(animation.Interval[0]));
-    range.setAttribute('max', String(animation.Interval[1]));
-    range.value = String(frame);
+  range.setAttribute("min", String(animation.Interval[0]));
+  range.setAttribute("max", String(animation.Interval[1]));
+  range.value = String(frame);
 
-    input.value = String(frame);
+  input.value = String(frame);
 
-    select.value = String(index);
+  select.value = String(index);
 }
 
 function setAnimationList() {
-    let list: string[] = model.Sequences.map(seq => seq.Name);
+  let list: string[] = model.Sequences.map((seq) => seq.Name);
 
-    if (list.length === 0) {
-        list = ['None'];
+  if (list.length === 0) {
+    list = ["None"];
+  }
+
+  const select = document.getElementById("select") as HTMLSelectElement;
+  select.innerHTML = "";
+  list.forEach((item, index) => {
+    const option = document.createElement("option");
+    option.textContent = item;
+    option.value = String(index);
+    select.appendChild(option);
+  });
+
+  const skeleton = document.getElementById("skeleton") as HTMLSelectElement;
+  for (const node of model.Nodes) {
+    if (node) {
+      const option = document.createElement("option");
+      option.textContent = node.Name;
+      option.value = node.Name;
+      skeleton.appendChild(option);
     }
-
-    const select = document.getElementById('select') as HTMLSelectElement;
-    select.innerHTML = '';
-    list.forEach((item, index) => {
-        const option = document.createElement('option');
-        option.textContent = item;
-        option.value = String(index);
-        select.appendChild(option);
-    });
-
-    const skeleton = document.getElementById('skeleton') as HTMLSelectElement;
-    for (const node of model.Nodes) {
-        if (node) {
-            const option = document.createElement('option');
-            option.textContent = node.Name;
-            option.value = node.Name;
-            skeleton.appendChild(option);
-        }
-    }
+  }
 }
 
 function setDragDropTextures() {
-    const texturesContainer = document.querySelector('.drag-textures');
+  const texturesContainer = document.querySelector(".drag-textures");
 
-    texturesContainer.innerHTML = '';
+  texturesContainer.innerHTML = "";
 
-    for (const texture of model.Textures) {
-        if (texture.Image) {
-            const row = document.createElement('div');
+  for (const texture of model.Textures) {
+    if (texture.Image) {
+      const row = document.createElement("div");
 
-            row.className = 'drag';
-            row.textContent = texture.Image;
-            row.setAttribute('data-texture', texture.Image);
-            texturesContainer.appendChild(row);
-        }
+      row.className = "drag";
+      row.textContent = texture.Image;
+      row.setAttribute("data-texture", texture.Image);
+      texturesContainer.appendChild(row);
     }
+  }
 }
 
 function initDragDrop() {
-    const container = document.querySelector('.container');
-    let dropTarget;
+  const container = document.querySelector(".container");
+  let dropTarget;
 
-    container.addEventListener('dragenter', function onDragEnter(event) {
-        let target = event.target as HTMLElement;
+  container.addEventListener("dragenter", function onDragEnter(event) {
+    let target = event.target as HTMLElement;
 
-        if (dropTarget && dropTarget !== event.target && dropTarget.classList) {
-            dropTarget.classList.remove('drag_hovered');
-        }
-        if (!target.classList) {
-            target = target.parentElement;
-        }
-        dropTarget = target;
-        if (target && target.classList && target.classList.contains('drag')) {
-            target.classList.add('drag_hovered');
-        }
-        container.classList.add('container_drag');
-        event.preventDefault();
-    });
-    container.addEventListener('dragleave', function onDragLeave(event) {
-        if (event.target === dropTarget) {
-            container.classList.remove('container_drag');
-            if (dropTarget && dropTarget.classList) {
-                dropTarget.classList.remove('drag_hovered');
-            }
-        }
-    });
-    container.addEventListener('dragover', function onDragLeave(event: DragEvent) {
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'copy';
-    });
-    const dropModel = (file, textures) => {
-        const reader = new FileReader();
-        const isMDX = file.name.indexOf('.mdx') > -1;
+    if (dropTarget && dropTarget !== event.target && dropTarget.classList) {
+      dropTarget.classList.remove("drag_hovered");
+    }
+    if (!target.classList) {
+      target = target.parentElement;
+    }
+    dropTarget = target;
+    if (target && target.classList && target.classList.contains("drag")) {
+      target.classList.add("drag_hovered");
+    }
+    container.classList.add("container_drag");
+    event.preventDefault();
+  });
+  container.addEventListener("dragleave", function onDragLeave(event) {
+    if (event.target === dropTarget) {
+      container.classList.remove("container_drag");
+      if (dropTarget && dropTarget.classList) {
+        dropTarget.classList.remove("drag_hovered");
+      }
+    }
+  });
+  container.addEventListener(
+    "dragover",
+    function onDragLeave(event: DragEvent) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    }
+  );
+  const dropModel = (file, textures) => {
+    const reader = new FileReader();
+    const isMDX = file.name.indexOf(".mdx") > -1;
 
-        reader.onload = async () => {
-            try {
-                if (isMDX) {
-                    model = parseMDX(reader.result as ArrayBuffer);
-                } else {
-                    model = parseMDL(reader.result as string);
-                }
-            } catch (err) {
-                console.error(err);
-                // showError(err);
-                return;
-            }
-
-            await processModelLoading();
-            setTextures(textures);
-            setDragDropTextures();
-        };
-
+    reader.onload = async () => {
+      try {
         if (isMDX) {
-            reader.readAsArrayBuffer(file);
+          model = parseMDX(reader.result as ArrayBuffer);
         } else {
-            reader.readAsText(file);
+          model = parseMDL(reader.result as string);
         }
+      } catch (err) {
+        console.error(err);
+        // showError(err);
+        return;
+      }
+
+      await processModelLoading();
+      setTextures(textures);
+      setDragDropTextures();
     };
 
-    const dropTexture = (file: File, textureName: string) => {
-        return new Promise<void>(resolve => {
-            const reader = new FileReader();
-            const isBLP = file.name.indexOf('.blp') > -1;
-            const isDDS = file.name.indexOf('.dds') > -1;
+    if (isMDX) {
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.readAsText(file);
+    }
+  };
 
-            reader.onload = () => {
-                try {
-                    if (isDDS) {
-                        const array = reader.result as ArrayBuffer;
-                        const dds = parseHeaders(array);
+  const dropTexture = (file: File, textureName: string) => {
+    return new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      const isBLP = file.name.indexOf(".blp") > -1;
+      const isDDS = file.name.indexOf(".dds") > -1;
 
-                        console.log(file.name, dds);
+      reader.onload = () => {
+        try {
+          if (isDDS) {
+            const array = reader.result as ArrayBuffer;
+            const dds = parseHeaders(array);
 
-                        let format: GLenum;
-                        let gpuFormat: GPUTextureFormat;
+            console.log(file.name, dds);
 
-                        if (dds.format === 'dxt1') {
-                            if (hasGPUBC) {
-                                gpuFormat = 'bc1-rgba-unorm';
-                            } else {
-                                format = ddsExt?.COMPRESSED_RGB_S3TC_DXT1_EXT;
-                            }
-                        } else if (dds.format === 'dxt3') {
-                            if (hasGPUBC) {
-                                gpuFormat = 'bc2-rgba-unorm';
-                            } else {
-                                format = ddsExt?.COMPRESSED_RGBA_S3TC_DXT3_EXT;
-                            }
-                        } else if (dds.format === 'dxt5') {
-                            if (hasGPUBC) {
-                                gpuFormat = 'bc3-rgba-unorm';
-                            } else {
-                                format = ddsExt?.COMPRESSED_RGBA_S3TC_DXT5_EXT;
-                            }
-                        } else if (dds.format === 'ati2') {
-                            if (hasGPUBC) {
-                                gpuFormat = 'bc5-rg-unorm';
-                            } else {
-                                format = rgtcExt?.COMPRESSED_RED_GREEN_RGTC2_EXT;
-                            }
-                        }
+            let format: GLenum;
+            let gpuFormat: GPUTextureFormat;
 
-                        if (gpuFormat) {
-                            modelRenderer.setGPUTextureCompressedImage(
-                                textureName,
-                                gpuFormat,
-                                reader.result as ArrayBuffer,
-                                dds
-                            );
-                        } else if (format) {
-                            modelRenderer.setTextureCompressedImage(
-                                textureName,
-                                format as DDS_FORMAT,
-                                reader.result as ArrayBuffer,
-                                dds
-                            );
-                        } else {
-                            const uint8 = new Uint8Array(array);
-                            const datas: ImageData[] = dds.images
-                                .filter(image => image.shape.width > 0 && image.shape.height > 0)
-                                .map(image => {
-                                    const src = uint8.slice(image.offset, image.offset + image.length);
-                                    const rgba = decodeDds(src, dds.format, image.shape.width, image.shape.height);
-                                    return new ImageData(new Uint8ClampedArray(rgba), image.shape.width, image.shape.height);
-                                });
+            if (dds.format === "dxt1") {
+              if (hasGPUBC) {
+                gpuFormat = "bc1-rgba-unorm";
+              } else {
+                format = ddsExt?.COMPRESSED_RGB_S3TC_DXT1_EXT;
+              }
+            } else if (dds.format === "dxt3") {
+              if (hasGPUBC) {
+                gpuFormat = "bc2-rgba-unorm";
+              } else {
+                format = ddsExt?.COMPRESSED_RGBA_S3TC_DXT3_EXT;
+              }
+            } else if (dds.format === "dxt5") {
+              if (hasGPUBC) {
+                gpuFormat = "bc3-rgba-unorm";
+              } else {
+                format = ddsExt?.COMPRESSED_RGBA_S3TC_DXT5_EXT;
+              }
+            } else if (dds.format === "ati2") {
+              if (hasGPUBC) {
+                gpuFormat = "bc5-rg-unorm";
+              } else {
+                format = rgtcExt?.COMPRESSED_RED_GREEN_RGTC2_EXT;
+              }
+            }
 
-                            modelRenderer.setTextureImageData(
-                                textureName,
-                                datas
-                            );
-                        }
+            if (gpuFormat) {
+              modelRenderer.setGPUTextureCompressedImage(
+                textureName,
+                gpuFormat,
+                reader.result as ArrayBuffer,
+                dds
+              );
+            } else if (format) {
+              modelRenderer.setTextureCompressedImage(
+                textureName,
+                format as DDS_FORMAT,
+                reader.result as ArrayBuffer,
+                dds
+              );
+            } else {
+              const uint8 = new Uint8Array(array);
+              const datas: ImageData[] = dds.images
+                .filter(
+                  (image) => image.shape.width > 0 && image.shape.height > 0
+                )
+                .map((image) => {
+                  const src = uint8.slice(
+                    image.offset,
+                    image.offset + image.length
+                  );
+                  const rgba = decodeDds(
+                    src,
+                    dds.format,
+                    image.shape.width,
+                    image.shape.height
+                  );
+                  return new ImageData(
+                    new Uint8ClampedArray(rgba),
+                    image.shape.width,
+                    image.shape.height
+                  );
+                });
 
-                        resolve();
-                    } else if (isBLP) {
-                        const blp = decode(reader.result as ArrayBuffer);
+              modelRenderer.setTextureImageData(textureName, datas);
+            }
 
-                        console.log(file.name, blp);
+            resolve();
+          } else if (isBLP) {
+            const blp = decode(reader.result as ArrayBuffer);
 
-                        modelRenderer.setTextureImageData(
-                            textureName,
-                            blp.mipmaps.map((_mipmap, i) => getImageData(blp, i))
-                        );
-                        resolve();
-                    } else {
-                        const img = new Image();
+            console.log(file.name, blp);
 
-                        img.onload = () => {
-                            console.log(file.name, img);
-                            modelRenderer.setTextureImage(textureName, img);
-                            resolve();
-                        };
+            modelRenderer.setTextureImageData(
+              textureName,
+              blp.mipmaps.map((_mipmap, i) =>
+                getImageData(blp, i)
+              ) as ImageData[]
+            );
+            resolve();
+          } else {
+            const img = new Image();
 
-                        img.src = reader.result as string;
-                    }
-                } catch (err) {
-                    console.error(err.stack);
-                    resolve();
-                }
+            img.onload = () => {
+              console.log(file.name, img);
+              modelRenderer.setTextureImage(textureName, img);
+              resolve();
             };
 
-            if (isBLP || isDDS) {
-                reader.readAsArrayBuffer(file);
-            } else {
-                reader.readAsDataURL(file);
-            }
-        });
-    };
-    container.addEventListener('drop', function onDrop(event: DragEvent) {
-        event.preventDefault();
-        container.classList.remove('container_drag');
-        container.classList.add('container_custom');
-        if (!dropTarget) {
-            return;
+            img.src = reader.result as string;
+          }
+        } catch (err) {
+          console.error(err.stack);
+          resolve();
         }
-        dropTarget.classList.remove('drag_hovered');
+      };
 
-        const files = event.dataTransfer.files;
-        if (!files || !files.length) {
-            return;
-        }
-
-        if (dropTarget.getAttribute('data-texture')) {
-            dropTexture(files[0], dropTarget.getAttribute('data-texture'));
-        } else {
-            let modelFile;
-
-            for (let i = 0; i < files.length; ++i) {
-                const file = files[i];
-
-                if (file.name.indexOf('.mdl') > -1 || file.name.indexOf('.mdx') > -1) {
-                    modelFile = file;
-                    break;
-                }
-            }
-
-            if (modelFile) {
-                const textures = {};
-
-                for (let i = 0; i < files.length; ++i) {
-                    const file = files[i],
-                        name = file.name.replace(CLEANUP_NAME_REGEXP, '$1').toLowerCase();
-
-                    if (file.name.indexOf('.mdl') > -1 || file.name.indexOf('.mdx') > -1) {
-                        continue;
-                    }
-
-                    textures[name] = file;
-                }
-
-                dropModel(modelFile, textures);
-            }
-        }
+      if (isBLP || isDDS) {
+        reader.readAsArrayBuffer(file);
+      } else {
+        reader.readAsDataURL(file);
+      }
     });
+  };
+  container.addEventListener("drop", function onDrop(event: DragEvent) {
+    event.preventDefault();
+    container.classList.remove("container_drag");
+    container.classList.add("container_custom");
+    if (!dropTarget) {
+      return;
+    }
+    dropTarget.classList.remove("drag_hovered");
 
+    const files = event.dataTransfer.files;
+    if (!files || !files.length) {
+      return;
+    }
 
+    if (dropTarget.getAttribute("data-texture")) {
+      dropTexture(files[0], dropTarget.getAttribute("data-texture"));
+    } else {
+      let modelFile;
 
-    function setTextures(textures) {
-        const promises: Promise<void>[] = [];
+      for (let i = 0; i < files.length; ++i) {
+        const file = files[i];
 
-        for (const texture of model.Textures) {
-            if (texture.Image) {
-                const cleanupName = texture.Image.replace(CLEANUP_NAME_REGEXP, '$1').toLowerCase();
-                if (cleanupName in textures) {
-                    promises.push(dropTexture(textures[cleanupName], texture.Image));
-                } else if (!gpuDevice) {
-                    loadTexture('empty.png', texture.Image);
-                }
-            }
+        if (file.name.indexOf(".mdl") > -1 || file.name.indexOf(".mdx") > -1) {
+          modelFile = file;
+          break;
+        }
+      }
+
+      if (modelFile) {
+        const textures = {};
+
+        for (let i = 0; i < files.length; ++i) {
+          const file = files[i],
+            name = file.name.replace(CLEANUP_NAME_REGEXP, "$1").toLowerCase();
+
+          if (
+            file.name.indexOf(".mdl") > -1 ||
+            file.name.indexOf(".mdx") > -1
+          ) {
+            continue;
+          }
+
+          textures[name] = file;
         }
 
-        Promise.all(promises).then(() => {
-            handleLoadedTexture();
-        });
+        dropModel(modelFile, textures);
+      }
     }
+  });
+
+  function setTextures(textures) {
+    const promises: Promise<void>[] = [];
+
+    for (const texture of model.Textures) {
+      if (texture.Image) {
+        const cleanupName = texture.Image.replace(
+          CLEANUP_NAME_REGEXP,
+          "$1"
+        ).toLowerCase();
+        if (cleanupName in textures) {
+          promises.push(dropTexture(textures[cleanupName], texture.Image));
+        } else if (!gpuDevice) {
+          loadTexture("empty.png", texture.Image);
+        }
+      }
+    }
+
+    Promise.all(promises).then(() => {
+      handleLoadedTexture();
+    });
+  }
+  (window as any).modelSet = {
+    dropModel,
+    dropTexture,
+    setTextureByBuffer: function (name, buffer) {
+      const isBLP = name.indexOf(".blp") > -1;
+      const isDDS = name.indexOf(".dds") > -1;
+      console.log(isBLP, isDDS);
+      if (isDDS) {
+        const array = buffer as ArrayBuffer;
+        const dds = parseHeaders(array);
+
+        let format: GLenum;
+        let gpuFormat: GPUTextureFormat;
+
+        if (dds.format === "dxt1") {
+          if (hasGPUBC) {
+            gpuFormat = "bc1-rgba-unorm";
+          } else {
+            format = ddsExt?.COMPRESSED_RGB_S3TC_DXT1_EXT;
+          }
+        } else if (dds.format === "dxt3") {
+          if (hasGPUBC) {
+            gpuFormat = "bc2-rgba-unorm";
+          } else {
+            format = ddsExt?.COMPRESSED_RGBA_S3TC_DXT3_EXT;
+          }
+        } else if (dds.format === "dxt5") {
+          if (hasGPUBC) {
+            gpuFormat = "bc3-rgba-unorm";
+          } else {
+            format = ddsExt?.COMPRESSED_RGBA_S3TC_DXT5_EXT;
+          }
+        } else if (dds.format === "ati2") {
+          if (hasGPUBC) {
+            gpuFormat = "bc5-rg-unorm";
+          } else {
+            format = rgtcExt?.COMPRESSED_RED_GREEN_RGTC2_EXT;
+          }
+        }
+
+        if (gpuFormat) {
+          modelRenderer.setGPUTextureCompressedImage(
+            name,
+            gpuFormat,
+            buffer as ArrayBuffer,
+            dds
+          );
+        } else if (format) {
+          modelRenderer.setTextureCompressedImage(
+            name,
+            format as DDS_FORMAT,
+            buffer as ArrayBuffer,
+            dds
+          );
+        } else {
+          const uint8 = new Uint8Array(array);
+          const datas: ImageData[] = dds.images
+            .filter((image) => image.shape.width > 0 && image.shape.height > 0)
+            .map((image) => {
+              const src = uint8.slice(
+                image.offset,
+                image.offset + image.length
+              );
+              const rgba = decodeDds(
+                src,
+                dds.format,
+                image.shape.width,
+                image.shape.height
+              );
+              return new ImageData(
+                new Uint8ClampedArray(rgba),
+                image.shape.width,
+                image.shape.height
+              );
+            });
+
+          modelRenderer.setTextureImageData(name, datas);
+        }
+      } else if (isBLP) {
+        const blp = decode(buffer as ArrayBuffer);
+
+        modelRenderer.setTextureImageData(
+          name,
+          blp.mipmaps.map((_mipmap, i) => getImageData(blp, i)) as ImageData[]
+        );
+      }
+    },
+    showModel: async function (buffer, call, isMDX = true) {
+      container.classList.remove("container_drag");
+      container.classList.add("container_custom");
+      if (isMDX) {
+        model = parseMDX(buffer as ArrayBuffer);
+      }
+      await processModelLoading();
+      handleLoadedTexture();
+      call && call();
+      // setTextures(textures);
+      // setDragDropTextures();
+    },
+    setTexturesByObj(obj) {
+      for (const i in obj) {
+        this.setTextureByBuffer(i, obj[i]);
+      }
+    },
+  };
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener("DOMContentLoaded", init);
