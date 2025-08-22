@@ -56,7 +56,7 @@ const ENV_PREFILTER_SIZE = 128;
 const MAX_ENV_MIP_LEVELS = 8;
 const BRDF_LUT_SIZE = 512;
 
-const MULTISAMPLE = 4;
+const MULTISAMPLE = 1;
 
 const FILTER_MODES_WITH_DEPTH_WRITE = new Set([0, 1]);
 

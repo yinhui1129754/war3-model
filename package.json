@@ -29,7 +29,7 @@
     "prepare": "husky install",
     "dev": "vite",
     "build-lib": "rm -rf dist && vite build && rollup --config rollup.config.ts --configPlugin typescript",
-    "build-samples": "rm -rf docs/dist && SAMPLES=1 npx vite build",
+    "build-samples": "rm -rf docs/dist &&cross-env SAMPLES=1 vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --ext .ts ."
   },
@@ -44,6 +44,7 @@
     "@types/node": "22.15.3",
     "@typescript-eslint/eslint-plugin": "5.43.0",
     "@typescript-eslint/parser": "5.43.0",
+    "cross-env": "10.0.0",
     "dds-parser": "1.0.1",
     "eslint": "7.32.0",
     "husky": "7.0.4",
